@@ -1,0 +1,11 @@
+runtime/
+*.env
+!.env.example
+node_modules/
+.next/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.DS_Store
+*.log
+backups/
