@@ -10,7 +10,8 @@ type SearchResult = {
   q: string; total: number; page: number; size: number;
   took_ms: number; results: Hit[];
 };
-type Cluster = { status: string; number_of_nodes: number; number_of_data_nodes: number; nodes: string[] };\ntype Status = {
+type Cluster = { status: string; number_of_nodes: number; number_of_data_nodes: number; nodes: string[] };
+type Status = {
   indexed_pages: number; known_urls: number; deadletters: number;
   pending_acks: number; workers: { id: string; inflight: number; seen_at: number }[];
 };
@@ -20,7 +21,8 @@ export default function Home() {
   const [activeQuery, setActiveQuery] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<SearchResult | null>(null);
-  const [status, setStatus] = useState<Status | null>(null);\n  const [cluster, setCluster] = useState<Cluster | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [cluster, setCluster] = useState<Cluster | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
