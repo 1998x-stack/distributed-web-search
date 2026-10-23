@@ -1,31 +1,36 @@
-name: route-B-v1 validation
+name: route-B-v2 quality gates
 on:
   push:
-    branches: [route-B-v1]
+    branches: [route-B-v2]
   pull_request:
-    paths: ["packages/**", "services/**", "apps/web/**", "deploy/**", "scripts/**", "tests/**"]
+    branches: [route-B-v2]
+    paths: ["packages/**","services/**","apps/web/**","deploy/**","scripts/**","tests/**",".github/**"]
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+    env:
+      DWS_TEST_REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - name: Install runtime dependencies
+      - name: Install runtime/test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r services/api/requirements.txt -r services/worker/requirements.txt
-      - name: Syntax and unit tests
+          python -m pip install -r services/api/requirements.txt -r services/worker/requirements.txt pyyaml
+      - name: Syntax / unit / Redis Lua integration
         run: |
-          python -m compileall -q packages services tests
+          python -m compileall -q packages services scripts tests
           python -m unittest discover -s tests -v
       - name: Bash syntax
         run: bash -n scripts/*.sh
-  frontend:
+  web:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/web
+    defaults: {run: {working-directory: apps/web}}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,7 +41,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate per-host Compose
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install pyyaml
+      - name: Validate each LAN host config
         run: |
           mkdir -p runtime
           cat > runtime/controller.env <<'EOF'
@@ -53,7 +61,28 @@ jobs:
           INGEST_TOKEN=exampleRandomValueLongEnoughForCIOnly_123
           DOMAIN_DELAY_MS=3000
           WORKER_CONCURRENCY=4
-          WORKER_ID=ubuntu-b
+          WORKER_ID=ubuntu-a
           EOF
+          python scripts/render-os-config.py os-a 192.168.1.101 192.168.1.102 192.168.1.103
+          set -a
+          . runtime/search.env
+          set +a
           docker compose --env-file runtime/controller.env -f deploy/controller.yml config --quiet
           docker compose -f deploy/worker.yml config --quiet
+          python scripts/render-os-config.py os-b 192.168.1.101 192.168.1.102 192.168.1.103 --out /tmp/os-b
+          set -a
+          . /tmp/os-b/search.env
+          set +a
+          docker compose -f deploy/search-node.yml config --quiet
+          python scripts/render-os-config.py os-c 192.168.1.101 192.168.1.102 192.168.1.103 --out /tmp/os-c
+          set -a
+          . /tmp/os-c/search.env
+          set +a
+          docker compose -f deploy/witness.yml config --quiet
+          python scripts/render-os-config.py os-a 192.168.1.101 192.168.1.102 192.168.1.103 --post-bootstrap
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          cfg=yaml.safe_load(Path("runtime/opensearch.yml").read_text())
+          assert "cluster.initial_cluster_manager_nodes" not in cfg
+          PY

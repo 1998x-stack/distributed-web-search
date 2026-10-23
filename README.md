@@ -1,74 +1,85 @@
-# Distributed Web Search · Route B V1
+# Distributed Web Search — Route B V2
 
-**三台同一局域网内的独立网页搜索引擎。** Ubuntu × 2 + macOS × 1，三台协作爬取公共且允许抓取的网页，集中索引，浏览器实时搜索。无需 Google/Baidu 结果接口，不要求 GPU。
+**两台 Ubuntu + 一台 macOS 同一局域网内的独立搜索引擎。** V2 is an implementation branch based on `route-B-v1`, with Redis delayed retries and recrawls, two OpenSearch **data** nodes (with one replica per shard), and a Mac **cluster-manager-only** voting node. All three hosts also run crawler Workers.
 
-- Crawling: **Scrapy 2.13** (one long-running worker per machine).
-- Scheduling and recovery: **Redis 7 Streams**, consumer groups, Lua dedup and host-wide rate limiter, `XAUTOCLAIM`.
-- Search: **OpenSearch 3 + analysis-icu**, Chinese/multilingual BM25 index.
-- API: **FastAPI**, token-protected seed creation and index ingestion.
-- UI: **Next.js 15 / React 19**, local search homepage.
-- Runtime: **Docker Compose**, central Ubuntu A controller, Ubuntu A/B/Mac workers.
+[Deployment](docs/DEPLOYMENT_V2.md) · [Architecture](docs/ARCHITECTURE_V2.md) · [Acceptance tests](docs/VERIFY_V2.md) · [V1→V2 migration](docs/MIGRATION_V2.md)
 
-[Architecture](docs/ARCHITECTURE.md) · [Deployment manual](docs/DEPLOYMENT.md)
+## Key differences from V1
 
-## LAN deployment in three commands (after Docker is installed)
+| Area | V1 | V2 |
+|---|---|---|
+| Scrapy crawling | 3 workers | 3 workers + scheduled recrawls |
+| Queue | Redis Streams + PEL | atomic delayed retry ZSET + Streams + recovery |
+| Index | 1 shard, no replicas, Ubuntu A | 2 shards + 1 replica, Ubuntu A and B |
+| Voting | single-node | manager candidates A, B, Mac C (quorum) |
+| Fetch fail | PEL timeout + claim | exponential delayed retry and deadletter |
+| 404/410 | ignored | remove old search document |
+| noindex on recrawl | skip indexing | remove old indexed document |
+| Index namespace | dws-pages-v1 | dws-pages-v2 (no implicit migration) |
+| URL namespace | dws:v1:* | dws:v2:* |
 
-Use **your real IP**, not the following illustrative one. All hosts must reach Ubuntu A TCP 6379 and 8000, and browser TCP 3000. Clone the same branch separately on each:
+## Deployment preview (replace sample LAN IPs)
+
+Prerequisites: Docker Engine/Compose on both Ubuntu PCs, Docker Desktop on Mac; Python 3 + PyYAML on all three hosts; 8090 is **not** used in Route B; TCP 9300 reachable between all three machines; Ubuntu A API TCP 8000, Redis TCP 6379, Web TCP 3000 reachable over trusted LAN.
+
+Clone on **each** machine:
 
 ```bash
-git clone -b route-B-v1 https://github.com/1998x-stack/distributed-web-search.git
+git clone --branch route-B-v2 --single-branch https://github.com/1998x-stack/distributed-web-search.git
 cd distributed-web-search
+python3 -m pip install --user pyyaml
 ```
 
-**Ubuntu A** (controller + its local worker):
+**Ubuntu A** (scheduler + redis + API + Web + OS data A + Scrapy):
 
 ```bash
 sudo sysctl -w vm.max_map_count=262144
 bash scripts/init-controller.sh 192.168.1.101
+python3 scripts/render-os-config.py os-a 192.168.1.101 192.168.1.102 192.168.1.103
 bash scripts/up-controller.sh
 bash scripts/up-worker.sh
 ```
 
-**Ubuntu B** (copy worker credentials from A over SSH first):
+**Ubuntu B** (OS data B + Scrapy): copy `worker-base.env` securely from Ubuntu A over SCP after controller init.
 
 ```bash
 mkdir -p runtime
 scp YOUR_USER@192.168.1.101:~/distributed-web-search/runtime/worker-base.env runtime/worker-base.env
 bash scripts/init-worker.sh ubuntu-b 192.168.1.101 runtime/worker-base.env
+python3 scripts/render-os-config.py os-b 192.168.1.101 192.168.1.102 192.168.1.103
+bash scripts/up-search-node.sh
 bash scripts/up-worker.sh
 ```
 
-**macOS** (Docker Desktop started; copy worker credentials from A):
+**Mac C** (OS voting manager + Scrapy):
 
 ```bash
 mkdir -p runtime
 scp YOUR_USER@192.168.1.101:~/distributed-web-search/runtime/worker-base.env runtime/worker-base.env
 bash scripts/init-worker.sh macos-c 192.168.1.101 runtime/worker-base.env
+python3 scripts/render-os-config.py os-c 192.168.1.101 192.168.1.102 192.168.1.103
+bash scripts/up-search-node.sh
 bash scripts/up-worker.sh
 open http://192.168.1.101:3000
 ```
 
-A more detailed runbook with system prerequisites, security and network checking is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+On Ubuntu A, verify `/api/v1/cluster` returns **3 nodes / 2 data nodes** while Mac is awake. Once the cluster is fully formed, remove `cluster.initial_cluster_manager_nodes` from each node's config with the `--post-bootstrap` rendering option (see full runbook for safe restart order).
 
-On **Ubuntu A** after checking crawl permissions:
+Then add a permitted seed from Ubuntu A:
 
 ```bash
 bash scripts/add-seed.sh https://YOUR_AUTHORIZED_PUBLIC_DOMAIN/ 1 100
-bash scripts/check-cluster.sh
+bash scripts/cluster-inspect.sh
 ```
 
-Visit `http://192.168.1.101:3000` to search. API status lives at `http://192.168.1.101:8000/api/v1/stats`.
+The browser search service remains `http://192.168.1.101:3000`.
 
-## Design choices
+## Major limitations / security boundary
 
-- All hosts can fetch from the same Redis Stream. No task allocation by machine IP, no multi-host Docker overlay network, no Kubernetes.
-- All machines are workers; only Ubuntu A owns the Redis queue, OpenSearch index, FastAPI and web app.
-- Index uses one primary shard / zero replicas: this is **distributed crawling, not distributed search storage**, as requested for V1.
-- First crawl is intentionally limited to the **exact seed hostname**, `max_depth` and `max_pages`. Redirects, cookies, non-HTTP protocols and private IPs are blocked; robots.txt is respected.
-- No continuous recrawl, semantic search, distributed OpenSearch, or login UI in V1.
+**V2 has replicated search shards, not full high availability.** Redis, web and API still depend on Ubuntu A; B and C do not replace the controller. The Mac witness may sleep as long as both Ubuntu manager voters stay up, but losing one Ubuntu during that sleep loses majority. Never interpret a green index as guaranteed backup: take off-site snapshots and test restore.
 
-## Important security and implementation limits
+OpenSearch Security plugin is deliberately disabled; **only TCP 9300** is exposed to trusted hosts for OpenSearch cluster transport. **Never publicly port-forward 9300, 6379 or 8000.** This is a lab reference, not a hardened untrusted multi-tenant crawler. Crawling arbitrary websites is allowed only to the extent their rules and applicable permissions allow it. SSRF has DNS-rebinding caveats that require outbound network isolation to harden further.
 
-This is a **trusted LAN research environment**, not a hardened public search SaaS. Redis and API work over LAN plaintext, OpenSearch is isolated behind the Docker network, and remote worker API writes are token-authenticated. Never forward ports 6379/8000 to public networks. Common HTML robots meta and X-Robots-Tag noindex/nofollow are implemented; before crawling third-party websites at scale, complete per-agent robots semantics, removal requests and stronger DNS rebinding protection. Respect website policies and crawl only authorized sources.
+**Do not mount/reuse V1 Redis or OpenSearch named volumes.** All V2 data has separate names and new index/stream namespaces. Running a fresh V2 stack does not import old indexes.
 
-**Validation status:** GitHub CI runs unit tests, Python syntax, Next build and Docker Compose config. These tests cannot prove successful 3-host operation on your hardware; after deployment, verify workers, indexing, failover and query results using the runbook.
+Live cluster formation, failover and crawling have not yet been tested on your own LAN; CI exercises code, Redis Lua semantics, Compose rendering and front-end compilation.
