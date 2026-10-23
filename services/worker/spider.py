@@ -22,6 +22,7 @@ from twisted.python.failure import Failure
 
 from packages.dws_core.frontier import CrawlJob, Frontier
 from packages.dws_core.urls import UnsafeURL, assert_public_url, normalize_url
+from .policy import robots_directives
 
 LOG = logging.getLogger(__name__)
 
@@ -173,11 +174,12 @@ class LanWebSpider(scrapy.Spider):
         description = (response.css('meta[name="description"]::attr(content)').get() or "").strip()[:1200]
         content = (trafilatura.extract(response.text, include_comments=False,
                                       include_tables=True, favor_precision=True) or "").strip()[:300000]
-        if not title and not content:
+        directives = robots_directives(response)
+        if not title and not content and "noindex" not in directives:
             await self.accept_without_index(message_id)
             return
         links = []
-        if job.depth < job.max_depth:
+        if job.depth < job.max_depth and "nofollow" not in directives:
             for href in response.css("a::attr(href)").getall()[:500]:
                 try:
                     child = normalize_url(href, response.url)
@@ -185,6 +187,14 @@ class LanWebSpider(scrapy.Spider):
                         links.append(child)
                 except (UnsafeURL, ValueError):
                     continue
+        if "noindex" in directives:
+            # Follow permitted links but never submit a noindex page to OpenSearch.
+            try:
+                await asyncio.to_thread(self.frontier.enqueue_children_and_ack,
+                                        message_id, job, links[:150])
+            finally:
+                self.inflight = max(0, self.inflight - 1)
+            return
         yield {
             "url": job.url, "domain": job.domain, "title": title,
             "description": description, "content": content,

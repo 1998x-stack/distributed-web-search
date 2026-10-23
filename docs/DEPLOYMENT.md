@@ -94,4 +94,4 @@ For backups, stop writes before snapshotting OpenSearch volume and Redis AOF vol
 
 ### Next work
 
-Add noindex and HTTP X-Robots handling before using arbitrary external domains; use permissioned documentation sites for the first smoke test.
+Common HTML meta and HTTP X-Robots noindex/nofollow are supported, but full user-agent-specific robots semantics and site-owner removal remain future work; use permissioned documentation sites for the first smoke test.

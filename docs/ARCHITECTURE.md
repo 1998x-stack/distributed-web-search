@@ -23,7 +23,7 @@
 - **Query flow**: browser Next.js same-origin rewrite → FastAPI GET `/api/v1/search` → OpenSearch ICU/BM25 → safe text result view.
 - **Ingestion flow**: authorized seed POST → atomic Redis Lua SADD+XADD → Scrapy HTTP GET → trafilatura clean text → authenticated `POST /api/v1/documents` → OpenSearch stable SHA-256 document ID → emit same-host child URLs → XACK.
 - **Failure recovery**: Messages are only acknowledged after document ingestion. At-least-once delivery plus idempotent document IDs and URL set gives safe replay; `XAUTOCLAIM` retries PEL entries after 120 seconds. A per-message attempt counter deadletters after four delivery attempts. Pending tasks may be retried after a slow response, so duplicate downloads are possible.
-- **Global politeness**: Redis Lua reserves per-domain fetch slots (`DOMAIN_DELAY_MS`, default 3000). Local Scrapy also honors `robots.txt`, `noindex`-relevant page information is not yet fully enforced (see limitations below), limits active downloads and disables auto-redirect.
+- **Global politeness**: Redis Lua reserves per-domain fetch slots (`DOMAIN_DELAY_MS`, default 3000). Local Scrapy honors `robots.txt`, and response parsing respects HTML robots meta / X-Robots-Tag `noindex` and `nofollow`, limits active downloads and disables auto-redirect.
 - **Scope**: Each submitted seed is an exact-host crawl with max_depth and max_pages. Links to other hosts are ignored, avoiding unbounded uncontrolled internet crawling.
 - **Search index**: `analysis-icu` for multilingual tokenizer and BM25 default similarity. Title boosted 4×, description 2×, content normal. No embedding/GPU dependencies.
 
@@ -58,7 +58,7 @@ Caveat: acknowledged stream entries are not automatically pruned in V1. Growth s
 - Redis password and API tokens travel over plain HTTP/Redis across the LAN; trust boundary is the private LAN only. Do not forward ports to the Internet. For untrusted LAN, add TLS, VPN overlay or reverse proxies.
 - OpenSearch's security plugin is disabled in a Docker internal network. Port 9200 is never published to host.
 - Default Compose binds API, Web, Redis to Ubuntu A's specific LAN IP rather than 0.0.0.0, but other clients on the LAN can see search/read-only stats.
-- robots.txt obeying is enabled, and operators should only crawl authorized/allowed sites. Index-level `noindex` and X-Robots-Tag parsing **must** be implemented before crawling third-party sites at scale.
+- robots.txt obeying is enabled, and operators should only crawl authorized/allowed sites. HTML robots meta and X-Robots-Tag `noindex` / `nofollow` are checked before indexing/link following; check complex user-agent-scoped rules separately before broad internet crawling.
 - Raw HTML is not returned in results; results use plain text and React escaping.
 
 ## Known V1 tradeoffs
@@ -71,12 +71,12 @@ Caveat: acknowledged stream entries are not automatically pruned in V1. Growth s
 6. Scrapy's robots.txt middleware applies per worker and does not share robots caches across processes; fetches for robots itself are not globally rate-coordinated across origins perfectly.
 7. Workers can hit memory, AOF, network or indexing bottlenecks; monitor before raising concurrency.
 8. `REDIS_PASSWORD`/tokens in Compose environment and env files are convenient for a trusted lab; production should move to secrets management.
-9. In V1, `robots.txt` obeying does not cover all `noindex` meta/HTTP directives; see recommended patch before public launch.
+9. V1 handles common `noindex` / `nofollow` directives but does not fully implement per-user-agent X-Robots-Tag semantics, canonical deletion/removal workflows or historical robots policy rescans.
 
 ## V2 milestones
 
 - Atomic delayed/revisit URL frontier with domain fairness, checkpoint recovery and recrawl.
 - Distributed OpenSearch with proper voting, replicas and failover plus 2nd control-plane host.
-- HTML noindex/follow handling, X-Robots-Tag, canonical URL, sitemap/RSS, site owner removal API.
+- Full per-agent X-Robots-Tag handling, canonical URL, sitemap/RSS, site owner removal API.
 - Near-duplicate SimHash, PageRank, snapshots/WARC, search quality and anti-spam evaluation.
 - OTel/Prometheus metrics, token rotation, TLS, user authentication and admin console.

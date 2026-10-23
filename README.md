@@ -69,6 +69,6 @@ Visit `http://192.168.1.101:3000` to search. API status lives at `http://192.168
 
 ## Important security and implementation limits
 
-This is a **trusted LAN research environment**, not a hardened public search SaaS. Redis and API work over LAN plaintext, OpenSearch is isolated behind the Docker network, and remote worker API writes are token-authenticated. Never forward ports 6379/8000 to public networks. Before crawling third-party websites at scale, add complete HTML meta and X-Robots-Tag noindex enforcement and stronger DNS rebinding protection. Respect website policies and crawl only authorized sources.
+This is a **trusted LAN research environment**, not a hardened public search SaaS. Redis and API work over LAN plaintext, OpenSearch is isolated behind the Docker network, and remote worker API writes are token-authenticated. Never forward ports 6379/8000 to public networks. Common HTML robots meta and X-Robots-Tag noindex/nofollow are implemented; before crawling third-party websites at scale, complete per-agent robots semantics, removal requests and stronger DNS rebinding protection. Respect website policies and crawl only authorized sources.
 
 **Validation status:** GitHub CI runs unit tests, Python syntax, Next build and Docker Compose config. These tests cannot prove successful 3-host operation on your hardware; after deployment, verify workers, indexing, failover and query results using the runbook.
