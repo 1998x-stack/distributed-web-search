@@ -15,8 +15,8 @@ class APITests(unittest.TestCase):
                     require_token(value, "ADMIN_TOKEN")
 
     def test_chinese_icu_mappings(self):
-        self.assertEqual(INDEX, "dws-pages-v1")
-        self.assertEqual(INDEX_BODY["settings"]["number_of_replicas"], 0)
+        self.assertEqual(INDEX, "dws-pages-v2")
+        self.assertEqual(INDEX_BODY["settings"]["number_of_replicas"], 1)
         self.assertEqual(INDEX_BODY["mappings"]["properties"]["content"]["analyzer"], "dws_icu")
 
 

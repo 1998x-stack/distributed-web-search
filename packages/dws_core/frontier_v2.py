@@ -179,6 +179,10 @@ class FrontierV2:
         self.r.eval(DEADLETTER, 3, self.stream, self.active, self.dead,
                     self.group, message_id, job.to_json(), reason[:200], job.url)
 
+    def deadletter_raw(self, message_id: str, payload: str, reason: str):
+        self.r.eval(DEADLETTER, 3, self.stream, self.active, self.dead,
+                    self.group, message_id, payload, reason[:200], "")
+
     def read_new(self, consumer: str, count: int = 4, block_ms: int = 1000):
         return self.r.xreadgroup(self.group, consumer,
                                  {self.stream: ">"}, count=count, block=block_ms)

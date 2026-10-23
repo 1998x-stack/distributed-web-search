@@ -13,13 +13,13 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field, HttpUrl
 
-from packages.dws_core.frontier import CrawlJob, Frontier
+from packages.dws_core.frontier_v2 import CrawlJob, FrontierV2
 from packages.dws_core.urls import UnsafeURL, assert_public_url, url_host
 
-INDEX = "dws-pages-v1"
+INDEX = "dws-pages-v2"
 
 INDEX_BODY = {
-    "settings": {"number_of_shards": 1, "number_of_replicas": 0,
+    "settings": {"number_of_shards": 2, "number_of_replicas": 1, "refresh_interval": "5s",
                  "analysis": {"analyzer": {"dws_icu": {"type": "icu_analyzer"}}}},
     "mappings": {"dynamic": "strict", "properties": {
         "url": {"type": "keyword", "ignore_above": 2048},
@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
             app.state.redis.ping()
             if not app.state.search.indices.exists(index=INDEX):
                 app.state.search.indices.create(index=INDEX, body=INDEX_BODY)
-            Frontier(app.state.redis).initialize()
+            FrontierV2(app.state.redis).initialize()
             break
         except Exception as exc:
             last_error = exc
@@ -114,7 +114,7 @@ def add_seed(seed: SeedRequest, authorization: str | None = Header(default=None)
     domain = url_host(url)
     job = CrawlJob(url=url, domain=domain, depth=0, max_depth=seed.max_depth,
                    max_pages=seed.max_pages)
-    enqueued = Frontier(app.state.redis).enqueue(job)
+    enqueued = FrontierV2(app.state.redis).enqueue(job)
     return {"enqueued": enqueued, "url": url, "domain": domain,
             "note": "Existing URLs are idempotent; V1 does not automatically recrawl them."}
 
@@ -168,11 +168,40 @@ def search(q: str = Query(default="", max_length=200),
             "results": results}
 
 
+@app.delete("/api/v1/documents")
+def delete_document(url: str = Query(max_length=2048),
+                    authorization: str | None = Header(default=None)):
+    require_token(authorization, "INGEST_TOKEN")
+    try:
+        url = assert_public_url(url, resolve=False)
+    except UnsafeURL as exc:
+        raise HTTPException(422, str(exc)) from exc
+    doc_id = hashlib.sha256(url.encode()).hexdigest()
+    # idempotent: missing documents are okay (e.g. first fetch returned 404)
+    app.state.search.delete(index=INDEX, id=doc_id, ignore=[404])
+    return {"deleted_or_absent": True, "url": url}
+
+
+@app.get("/api/v1/cluster")
+def cluster():
+    health = app.state.search.cluster.health()
+    nodes = app.state.search.nodes.info()
+    return {
+        "cluster_name": health.get("cluster_name"),
+        "status": health.get("status"),
+        "number_of_nodes": health.get("number_of_nodes"),
+        "number_of_data_nodes": health.get("number_of_data_nodes"),
+        "active_shards": health.get("active_shards"),
+        "unassigned_shards": health.get("unassigned_shards"),
+        "nodes": sorted(node["name"] for node in nodes.get("nodes", {}).values()),
+    }
+
+
 @app.get("/api/v1/stats")
 def stats():
     r = app.state.redis
     workers = []
-    for key in r.scan_iter(match="dws:v1:worker:*", count=100):
+    for key in r.scan_iter(match="dws:v2:worker:*", count=100):
         raw = r.get(key)
         if raw:
             import json
@@ -184,12 +213,15 @@ def stats():
             break
     pending = 0
     try:
-        pending = r.xpending(Frontier.stream, Frontier.group)["pending"]
+        pending = r.xpending(FrontierV2.stream, FrontierV2.group)["pending"]
     except redis.RedisError:
         pass
     return {"indexed_pages": app.state.search.count(index=INDEX)["count"],
-            "queued_events_total": r.xlen(Frontier.stream),
+            "queued_events_total": r.xlen(FrontierV2.stream),
             "pending_acks": pending,
-            "known_urls": r.scard("dws:v1:seen"),
-            "deadletters": r.xlen(Frontier.dead_stream) if r.exists(Frontier.dead_stream) else 0,
-            "workers": workers}
+            "known_urls": r.scard(FrontierV2.seen),
+            "scheduled": r.zcard(FrontierV2.due),
+            "active_urls": r.scard(FrontierV2.active),
+            "deadletters": r.xlen(FrontierV2.dead) if r.exists(Frontier.dead_stream) else 0,
+            "workers": workers,
+            "cluster": app.state.search.cluster.health().get("status", "unknown")}

@@ -44,7 +44,7 @@ class TestFrontierV2(unittest.TestCase):
     def test_deadletter_after_limit(self):
         attempt4 = CrawlJob(self.job.url, self.job.domain, 0, 2, 30, 4)
         self.assertFalse(self.f.retry("2-0", attempt4, "timeout"))
-        self.assertIn("deadletters", self.r.eval.call_args.args[5])
+        self.assertIn("deadletters", self.r.eval.call_args.args[4])
 
     def test_dispatch_due(self):
         self.r.eval.return_value = 3
