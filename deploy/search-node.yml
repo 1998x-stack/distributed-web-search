@@ -1,0 +1,24 @@
+name: dws-v2-os-b
+services:
+  opensearch:
+    build:
+      context: ..
+      dockerfile: deploy/opensearch/Dockerfile
+    container_name: dws-v2-os-b
+    restart: unless-stopped
+    environment:
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms${OS_HEAP:-1g} -Xmx${OS_HEAP:-1g}"
+    volumes:
+      - os-b-data:/usr/share/opensearch/data
+      - ../runtime/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
+    ports:
+      - "${OS_PUBLISH_IP}:9300:9300"
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+      nofile: {soft: 65536, hard: 65536}
+    logging: {options: {max-size: "100m", max-file: "3"}}
+volumes:
+  os-b-data:
+    name: dws_v2_os_b_data
