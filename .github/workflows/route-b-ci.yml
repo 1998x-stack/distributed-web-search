@@ -1,0 +1,59 @@
+name: route-B-v1 validation
+on:
+  push:
+    branches: [route-B-v1]
+  pull_request:
+    paths: ["packages/**", "services/**", "apps/web/**", "deploy/**", "scripts/**", "tests/**"]
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r services/api/requirements.txt -r services/worker/requirements.txt
+      - name: Syntax and unit tests
+        run: |
+          python -m compileall -q packages services tests
+          python -m unittest discover -s tests -v
+      - name: Bash syntax
+        run: bash -n scripts/*.sh
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "22"}
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate per-host Compose
+        run: |
+          mkdir -p runtime
+          cat > runtime/controller.env <<'EOF'
+          CONTROLLER_IP=192.168.1.101
+          REDIS_PASSWORD=exampleRandomValueLongEnoughForCIOnly_123
+          INGEST_TOKEN=exampleRandomValueLongEnoughForCIOnly_123
+          ADMIN_TOKEN=exampleRandomValueLongEnoughForCIOnly_123
+          OPENSEARCH_HEAP=1g
+          EOF
+          cat > runtime/worker.env <<'EOF'
+          REDIS_HOST=192.168.1.101
+          REDIS_PASSWORD=exampleRandomValueLongEnoughForCIOnly_123
+          API_URL=http://192.168.1.101:8000
+          INGEST_TOKEN=exampleRandomValueLongEnoughForCIOnly_123
+          DOMAIN_DELAY_MS=3000
+          WORKER_CONCURRENCY=4
+          WORKER_ID=ubuntu-b
+          EOF
+          docker compose --env-file runtime/controller.env -f deploy/controller.yml config --quiet
+          docker compose -f deploy/worker.yml config --quiet
