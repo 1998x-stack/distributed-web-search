@@ -10,7 +10,7 @@ type SearchResult = {
   q: string; total: number; page: number; size: number;
   took_ms: number; results: Hit[];
 };
-type Status = {
+type Cluster = { status: string; number_of_nodes: number; number_of_data_nodes: number; nodes: string[] };\ntype Status = {
   indexed_pages: number; known_urls: number; deadletters: number;
   pending_acks: number; workers: { id: string; inflight: number; seen_at: number }[];
 };
@@ -20,13 +20,15 @@ export default function Home() {
   const [activeQuery, setActiveQuery] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<SearchResult | null>(null);
-  const [status, setStatus] = useState<Status | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);\n  const [cluster, setCluster] = useState<Cluster | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     fetch("/api/v1/stats").then(r => r.ok ? r.json() : Promise.reject())
       .then((json: Status) => setStatus(json)).catch(() => {});
+    fetch("/api/v1/cluster").then(r => r.ok ? r.json() : Promise.reject())
+      .then((json: Cluster) => setCluster(json)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -75,6 +77,8 @@ export default function Home() {
         <span><i className="dot" /> <strong>{status.workers.length}</strong> 个在线 Worker</span>
         <span><strong>{status.indexed_pages.toLocaleString()}</strong> 已索引页面</span>
         <span><strong>{status.known_urls.toLocaleString()}</strong> 已发现 URL</span>
+        <span><strong>{status.pending_acks.toLocaleString()}</strong> 正在处理</span>
+        {cluster && <span><i className="dot" /> <strong>{cluster.number_of_data_nodes}</strong> 个索引数据节点 · {cluster.status}</span>}
       </div>}
       {activeQuery && <section className="results">
         <div className="resultmeta">{loading ? "正在搜索…" : data ? `找到 ${data.total.toLocaleString()} 条结果 · ${data.took_ms} ms` : ""}</div>

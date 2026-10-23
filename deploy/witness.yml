@@ -1,7 +1,9 @@
 name: dws-v2-os-c
 services:
   opensearch:
-    image: opensearchproject/opensearch:3.9.0
+    build:
+      context: ..
+      dockerfile: deploy/opensearch/Dockerfile
     container_name: dws-v2-os-c
     restart: unless-stopped
     environment:

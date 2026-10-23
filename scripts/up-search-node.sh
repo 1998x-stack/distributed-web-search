@@ -18,5 +18,5 @@ case "$OS_NODE" in
 esac
 docker info >/dev/null
 docker compose -f "$FILE" config --quiet
-docker compose -f "$FILE" up -d --build
+docker compose -f "$FILE" up -d --build --force-recreate
 echo "Started $OS_NODE at $OS_PUBLISH_IP:9300 (TCP transport only)."
