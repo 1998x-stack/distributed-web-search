@@ -205,13 +205,21 @@ class LanWebSpider(scrapy.Spider):
                 except (UnsafeURL, ValueError):
                     continue
         if "noindex" in directives:
-            # Follow permitted links but never submit a noindex page to OpenSearch.
+            # Remove a previously indexed version; noindex pages must not linger.
             try:
+                async with httpx.AsyncClient(timeout=20) as client:
+                    deleted = await client.delete(
+                        os.environ["API_URL"].rstrip("/") + "/api/v1/documents",
+                        params={"url": job.url},
+                        headers={"Authorization": "Bearer " + os.environ["INGEST_TOKEN"]})
+                    deleted.raise_for_status()
                 await asyncio.to_thread(self.frontier.finish,
                                         message_id, job, links[:150],
                                         int(os.environ.get("RECRAWL_SECONDS", "86400")))
-            finally:
-                self.inflight = max(0, self.inflight - 1)
+            except Exception as exc:
+                await self.reschedule(message_id, job, "noindex cleanup " + str(exc))
+                return
+            self.inflight = max(0, self.inflight - 1)
             return
         yield {
             "url": job.url, "domain": job.domain, "title": title,

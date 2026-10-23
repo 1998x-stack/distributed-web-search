@@ -1,5 +1,10 @@
 import unittest
-from scripts.render_os_config import create_config, private_ip
+from pathlib import Path
+import runpy
+
+_config = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "render-os-config.py"))
+create_config = _config["create_config"]
+private_ip = _config["private_ip"]
 
 
 class OpenSearchConfigTests(unittest.TestCase):
