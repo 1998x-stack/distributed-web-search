@@ -1,0 +1,11 @@
+name: dws-worker
+services:
+  crawler:
+    build:
+      context: ..
+      dockerfile: services/worker/Dockerfile
+    restart: unless-stopped
+    env_file: ../runtime/worker.env
+    stop_grace_period: 45s
+    logging:
+      options: {max-size: "40m", max-file: "3"}
