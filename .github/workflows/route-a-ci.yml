@@ -1,0 +1,27 @@
+name: route-A validation
+on:
+  push:
+    branches: [route-A]
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'infra/**'
+      - 'tests/**'
+      - '.github/workflows/route-a-ci.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash syntax
+        run: |
+          bash -n scripts/*.sh
+      - name: Config smoke test
+        run: bash scripts/smoke-config.sh
+      - name: Compose validation
+        run: |
+          mkdir -p runtime
+          cp tests/fixtures/yacy.init runtime/yacy.init
+          printf 'network.unit.name = homeweb\n' > runtime/yacy.network.route-A.unit
+          cp .env.example .env
+          docker compose -f infra/compose.yml --env-file .env config --quiet

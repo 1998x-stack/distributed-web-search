@@ -1,0 +1,8 @@
+# Node-local files, IP/config details and runtime state
+.env
+runtime/
+backups/
+*.log
+.DS_Store
+__pycache__/
+*.pyc

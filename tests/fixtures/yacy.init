@@ -1,0 +1,9 @@
+# Minimal fixture only. Production uses actual yacy.init extracted from official image.
+network.unit.definition = defaults/yacy.network.freeworld.unit
+seedUploadMethod=none
+seedFilePath=
+staticIP=
+upnp.enabled=true
+browserPopUpTrigger=true
+allowDistributeIndex=true
+allowReceiveIndex=true

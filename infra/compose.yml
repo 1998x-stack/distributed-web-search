@@ -1,0 +1,21 @@
+services:
+  yacy:
+    image: ${YACY_IMAGE:-yacy/yacy_search_server:latest}
+    container_name: route-a-${NODE_ID}
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${YACY_HTTP_PORT:-8090}:8090"
+    environment:
+      YACY_JAVASTART_XMX: ${YACY_JAVASTART_XMX:-Xmx1500m}
+    volumes:
+      - data:/opt/yacy_search_server/DATA
+      - ../runtime/yacy.init:/opt/yacy_search_server/defaults/yacy.init:ro
+      - ../runtime/yacy.network.route-A.unit:/opt/yacy_search_server/defaults/yacy.network.route-A.unit:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+volumes:
+  data:
+    name: ${YACY_VOLUME_NAME}
