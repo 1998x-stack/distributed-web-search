@@ -14,10 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Bash syntax
-        run: |
-          bash -n scripts/*.sh
+        run: bash -n scripts/*.sh
       - name: Config smoke test
         run: bash scripts/smoke-config.sh
+      - name: Python invariant tests
+        run: python3 -m unittest discover -s tests -v
       - name: Compose validation
         run: |
           mkdir -p runtime
