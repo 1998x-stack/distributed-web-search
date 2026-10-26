@@ -1,7 +1,7 @@
 name: route-B-v2 quality gates
 on:
   push:
-    branches: [route-B-v2]
+    branches: [route-B-v2, route-B-v2-hardening]
   pull_request:
     branches: [route-B-v2]
     paths: ["packages/**","services/**","apps/web/**","deploy/**","scripts/**","tests/**",".github/**"]
@@ -86,3 +86,35 @@ jobs:
           cfg=yaml.safe_load(Path("runtime/opensearch.yml").read_text())
           assert "cluster.initial_cluster_manager_nodes" not in cfg
           PY
+
+  opensearch-smoke:
+    # Actually builds the ICU-enabled OpenSearch image and verifies its analyzer,
+    # a Chinese-language document insert, and BM25 retrieval on a disposable runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -r services/api/requirements.txt
+      - name: Build production ICU image
+        run: docker build -t dws-v2-icu-smoke -f deploy/opensearch/Dockerfile .
+      - name: Start ephemeral single-node OpenSearch
+        run: |
+          sudo sysctl -w vm.max_map_count=262144
+          docker run -d --name dws-ci-os \
+            --memory=3g \
+            -e discovery.type=single-node \
+            -e DISABLE_SECURITY_PLUGIN=true \
+            -e DISABLE_INSTALL_DEMO_CONFIG=true \
+            -e OPENSEARCH_JAVA_OPTS='-Xms512m -Xmx512m' \
+            -p 127.0.0.1:19200:9200 \
+            dws-v2-icu-smoke
+      - name: Real index/search smoke
+        run: python scripts/smoke-opensearch.py http://127.0.0.1:19200
+      - name: Container logs
+        if: failure()
+        run: docker logs --tail 160 dws-ci-os || true
+      - name: Remove ephemeral container
+        if: always()
+        run: docker rm -f dws-ci-os >/dev/null 2>&1 || true

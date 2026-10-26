@@ -51,9 +51,9 @@ return 1
 """
 
 DEADLETTER = """
-redis.call('XADD',KEYS[3],'*','payload',ARGV[3],'reason',ARGV[4])
 if redis.call('XACK',KEYS[1],ARGV[1],ARGV[2]) ~= 1 then return 0 end
 redis.call('XDEL',KEYS[1],ARGV[2])
+redis.call('XADD',KEYS[3],'*','payload',ARGV[3],'reason',ARGV[4])
 local url=ARGV[5]
 if url == '' then
   local ok,doc=pcall(cjson.decode,ARGV[3])

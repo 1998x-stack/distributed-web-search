@@ -70,7 +70,17 @@ class RedisIntegration(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Stale retry"):
             self.front.retry(msg[0], job, "late failure")
 
-    def test_d_global_rate_limiter_keeps_queued_slots_reserved(self):
+    def test_d_stale_deadletter_cannot_append_duplicate_event(self):
+        job = CrawlJob("https://example.org/dead-once", "example.org", 0, 1, 50)
+        self.assertTrue(self.front.enqueue(job))
+        message = self.front.read_new("worker-a", block_ms=10)[0][1][0]
+        self.front.deadletter(message[0], job, "terminal")
+        count = self.r.xlen(self.front.dead)
+        with self.assertRaisesRegex(RuntimeError, "Stale deadletter"):
+            self.front.deadletter(message[0], job, "late terminal")
+        self.assertEqual(self.r.xlen(self.front.dead), count)
+
+    def test_e_global_rate_limiter_keeps_queued_slots_reserved(self):
         host = "many-reservations.example.org"
         delays = [self.front.reserve_domain_delay_ms(host, 3000) for _ in range(30)]
         self.assertGreater(delays[-1], 60000)
