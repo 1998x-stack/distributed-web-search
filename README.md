@@ -2,7 +2,7 @@
 
 **两台 Ubuntu + 一台 macOS 同一局域网内的独立搜索引擎。** V2 is an implementation branch based on `route-B-v1`, with Redis delayed retries and recrawls, two OpenSearch **data** nodes (with one replica per shard), and a Mac **cluster-manager-only** voting node. All three hosts also run crawler Workers.
 
-[Deployment](docs/DEPLOYMENT_V2.md) · [Architecture](docs/ARCHITECTURE_V2.md) · [Acceptance tests](docs/VERIFY_V2.md) · [V1→V2 migration](docs/MIGRATION_V2.md)
+[Hardening audit](docs/HARDENING_AUDIT.md) · [Deployment](docs/DEPLOYMENT_V2.md) · [Architecture](docs/ARCHITECTURE_V2.md) · [Acceptance tests](docs/VERIFY_V2.md) · [V1→V2 migration](docs/MIGRATION_V2.md)
 
 ## Key differences from V1
 

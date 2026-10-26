@@ -2,7 +2,20 @@
   "name": "distributed-web-search-web",
   "version": "1.0.0",
   "private": true,
-  "scripts": {"dev": "next dev -H 0.0.0.0", "build": "next build", "start": "next start -H 0.0.0.0 -p 3000"},
-  "dependencies": {"next": "15.5.7", "react": "19.2.0", "react-dom": "19.2.0"},
-  "devDependencies": {"typescript": "5.9.3", "@types/react": "19.2.0", "@types/react-dom": "19.2.0", "@types/node": "22.18.8"}
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3000"
+  },
+  "dependencies": {
+    "next": "15.5.28",
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@types/node": "22.18.8"
+  }
 }
