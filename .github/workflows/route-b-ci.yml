@@ -111,7 +111,7 @@ jobs:
             -p 127.0.0.1:19200:9200 \
             dws-v2-icu-smoke
       - name: Real index/search smoke
-        run: python scripts/smoke-opensearch.py http://127.0.0.1:19200
+        run: PYTHONPATH=. python scripts/smoke-opensearch.py http://127.0.0.1:19200
       - name: Container logs
         if: failure()
         run: docker logs --tail 160 dws-ci-os || true
