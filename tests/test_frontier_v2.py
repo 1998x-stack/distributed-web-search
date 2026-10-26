@@ -51,6 +51,16 @@ class TestFrontierV2(unittest.TestCase):
         self.assertEqual(self.f.dispatch_due(20), 3)
         self.assertEqual(self.r.eval.call_args.args[0], DISPATCH_DUE)
 
+    def test_stale_finish_cannot_report_success(self):
+        self.r.eval.return_value = 0
+        with self.assertRaisesRegex(RuntimeError, "Stale completion"):
+            self.f.finish("missing-0", self.job, [], 60)
+
+    def test_stale_retry_cannot_report_success(self):
+        self.r.eval.return_value = 0
+        with self.assertRaisesRegex(RuntimeError, "Stale retry"):
+            self.f.retry("missing-0", self.job, "timeout")
+
 
 if __name__ == "__main__":
     unittest.main()

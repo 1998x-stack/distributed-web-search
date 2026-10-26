@@ -58,6 +58,25 @@ class RedisIntegration(unittest.TestCase):
         next_msg = self.front.read_new("worker-b", block_ms=10)[0][1][0]
         self.assertEqual(CrawlJob.from_json(next_msg[1]["payload"]).attempt, 1)
 
+    def test_c_stale_completion_and_retry_do_not_mutate_live_job(self):
+        job = CrawlJob("https://example.org/stale-case", "example.org", 0, 1, 50)
+        self.assertTrue(self.front.enqueue(job))
+        msg = self.front.read_new("worker-a", block_ms=10)[0][1][0]
+        self.front.finish(msg[0], job, [], 86400)
+        before = self.r.zscore(self.front.due, job.url)
+        with self.assertRaisesRegex(RuntimeError, "Stale completion"):
+            self.front.finish(msg[0], job, [], 10)
+        self.assertEqual(self.r.zscore(self.front.due, job.url), before)
+        with self.assertRaisesRegex(RuntimeError, "Stale retry"):
+            self.front.retry(msg[0], job, "late failure")
+
+    def test_d_global_rate_limiter_keeps_queued_slots_reserved(self):
+        host = "many-reservations.example.org"
+        delays = [self.front.reserve_domain_delay_ms(host, 3000) for _ in range(30)]
+        self.assertGreater(delays[-1], 60000)
+        ttl = self.r.pttl("dws:v2:rate:" + host)
+        self.assertGreater(ttl, delays[-1])
+
 
 if __name__ == "__main__":
     unittest.main()

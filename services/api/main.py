@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
     app.state.search.close()
 
 
-app = FastAPI(title="Distributed Web Search", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Distributed Web Search", version="2.1.0", lifespan=lifespan)
 
 
 class SeedRequest(BaseModel):
@@ -116,7 +116,7 @@ def add_seed(seed: SeedRequest, authorization: str | None = Header(default=None)
                    max_pages=seed.max_pages)
     enqueued = FrontierV2(app.state.redis).enqueue(job)
     return {"enqueued": enqueued, "url": url, "domain": domain,
-            "note": "Existing URLs are idempotent; V1 does not automatically recrawl them."}
+            "note": "Existing URLs are idempotent; V2 revisits URLs on the recrawl schedule."}
 
 
 @app.post("/api/v1/documents", status_code=201)
@@ -222,6 +222,6 @@ def stats():
             "known_urls": r.scard(FrontierV2.seen),
             "scheduled": r.zcard(FrontierV2.due),
             "active_urls": r.scard(FrontierV2.active),
-            "deadletters": r.xlen(FrontierV2.dead) if r.exists(Frontier.dead_stream) else 0,
+            "deadletters": r.xlen(FrontierV2.dead) if r.exists(FrontierV2.dead) else 0,
             "workers": workers,
             "cluster": app.state.search.cluster.health().get("status", "unknown")}

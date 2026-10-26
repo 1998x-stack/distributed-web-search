@@ -31,7 +31,7 @@ return 1
 """
 
 FINISH = """
-redis.call('XACK',KEYS[1],ARGV[1],ARGV[2])
+if redis.call('XACK',KEYS[1],ARGV[1],ARGV[2]) ~= 1 then return 0 end
 redis.call('XDEL',KEYS[1],ARGV[2])
 redis.call('SREM',KEYS[2],ARGV[3])
 if tonumber(ARGV[4])>0 then
@@ -42,7 +42,7 @@ return 1
 """
 
 RETRY = """
-redis.call('XACK',KEYS[1],ARGV[1],ARGV[2])
+if redis.call('XACK',KEYS[1],ARGV[1],ARGV[2]) ~= 1 then return 0 end
 redis.call('XDEL',KEYS[1],ARGV[2])
 redis.call('SREM',KEYS[2],ARGV[3])
 redis.call('HSET',KEYS[4],ARGV[3],ARGV[5])
@@ -52,9 +52,14 @@ return 1
 
 DEADLETTER = """
 redis.call('XADD',KEYS[3],'*','payload',ARGV[3],'reason',ARGV[4])
-redis.call('XACK',KEYS[1],ARGV[1],ARGV[2])
+if redis.call('XACK',KEYS[1],ARGV[1],ARGV[2]) ~= 1 then return 0 end
 redis.call('XDEL',KEYS[1],ARGV[2])
-redis.call('SREM',KEYS[2],ARGV[5])
+local url=ARGV[5]
+if url == '' then
+  local ok,doc=pcall(cjson.decode,ARGV[3])
+  if ok and type(doc)=='table' and type(doc.url)=='string' then url=doc.url end
+end
+if url ~= '' then redis.call('SREM',KEYS[2],url) end
 return 1
 """
 
@@ -82,7 +87,7 @@ local now=tonumber(ARGV[1])
 local gap=tonumber(ARGV[2])
 local prev=tonumber(redis.call('GET',KEYS[1]) or '0')
 local slot=math.max(now,prev)
-redis.call('SET',KEYS[1],slot+gap,'PX',math.max(60000,gap*4))
+redis.call('SET',KEYS[1],slot+gap,'PX',math.max(60000,slot+gap-now+60000))
 return slot-now
 """
 
@@ -156,8 +161,10 @@ class FrontierV2:
         fresh = CrawlJob(job.url, job.domain, job.depth,
                          job.max_depth, job.max_pages, 0)
         at = int(time.time()) + recrawl_seconds if recrawl_seconds else 0
-        self.r.eval(FINISH, 4, self.stream, self.active, self.due, self.payloads,
+        accepted = self.r.eval(FINISH, 4, self.stream, self.active, self.due, self.payloads,
                     self.group, message_id, job.url, at, fresh.to_json())
+        if not accepted:
+            raise RuntimeError("Stale completion: stream message was already acknowledged")
         return added
 
     def retry(self, message_id: str, job: CrawlJob, reason: str,
@@ -170,18 +177,24 @@ class FrontierV2:
                             job.max_pages, next_attempt)
         # Backoff uses next_attempt, capped at 1 hour.
         delay = min(3600, base_delay_seconds * (2 ** (next_attempt-1)))
-        self.r.eval(RETRY, 4, self.stream, self.active, self.due, self.payloads,
+        accepted = self.r.eval(RETRY, 4, self.stream, self.active, self.due, self.payloads,
                     self.group, message_id, job.url, int(time.time())+delay,
                     next_job.to_json())
+        if not accepted:
+            raise RuntimeError("Stale retry: stream message was already acknowledged")
         return True
 
     def deadletter(self, message_id: str, job: CrawlJob, reason: str):
-        self.r.eval(DEADLETTER, 3, self.stream, self.active, self.dead,
+        accepted = self.r.eval(DEADLETTER, 3, self.stream, self.active, self.dead,
                     self.group, message_id, job.to_json(), reason[:200], job.url)
+        if not accepted:
+            raise RuntimeError("Stale deadletter: stream message was already acknowledged")
 
     def deadletter_raw(self, message_id: str, payload: str, reason: str):
-        self.r.eval(DEADLETTER, 3, self.stream, self.active, self.dead,
+        accepted = self.r.eval(DEADLETTER, 3, self.stream, self.active, self.dead,
                     self.group, message_id, payload, reason[:200], "")
+        if not accepted:
+            raise RuntimeError("Stale invalid-message acknowledgement")
 
     def read_new(self, consumer: str, count: int = 4, block_ms: int = 1000):
         return self.r.xreadgroup(self.group, consumer,
